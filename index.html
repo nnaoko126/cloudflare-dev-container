@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>浜松市避難所マップ</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <style>
+    body { margin: 0; }
+    #map { height: 100vh; }
+    .popup-table { border-collapse: collapse; font-size: 13px; }
+    .popup-table th { text-align: left; padding: 2px 8px 2px 0; color: #555; white-space: nowrap; vertical-align: top; }
+    .popup-table td { padding: 2px 0; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/papaparse/papaparse.min.js"></script>
+  <script>
+    // 地図の初期化（CSVの読み込みに失敗しても地図は表示される）
+    const map = L.map("map").setView([34.7966, 137.9361], 10);
+    L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png", {
+      attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html">国土地理院</a>',
+      maxZoom: 18
+    }).addTo(map);
+
+    // HTMLエスケープ（ポップアップに安全に文字を入れるため）
+    const esc = s => String(s ?? "").replace(/[&<>"']/g, c =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+    // CSVはShift-JIS（CP932）なので、fetchで読み込んでから復号する
+    fetch("ori-data/221309_hamamatsu_hinanjyo.csv")
+      .then(res => {
+        if (!res.ok) throw new Error("CSVが見つかりません: HTTP " + res.status);
+        return res.arrayBuffer();
+      })
+      .then(buf => {
+        const text = new TextDecoder("shift-jis").decode(buf);
+        const results = Papa.parse(text, { header: true, skipEmptyLines: true });
+        const markers = []; // array of {marker, data}
+
+// アイコン定義
+const defaultIcon = L.icon({
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
+});
+const translucentIcon = L.icon({
+  iconUrl: L.Icon.Default.imagePath + '/marker-icon.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowUrl: L.Icon.Default.imagePath + '/marker-shadow.png',
+  shadowSize: [41, 41],
+  opacity: 0.3
+});
+const clickIcon = L.icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowUrl: L.Icon.Default.imagePath + '/marker-shadow.png',
+  shadowSize: [41, 41]
+});
+
+
+        results.data.forEach(row => {
+          const lat = parseFloat(row["緯度"]);
+          const lon = parseFloat(row["経度"]);
+          if (isNaN(lat) || isNaN(lon)) return; // 座標がない行は飛ばす
+
+          const popup =
+            `<b>${esc(row["避難所名称"])}</b>（${esc(row["区"])}）` +
+            `<table class="popup-table">` +
+            `<tr><th>所在地</th><td>${esc(row["所在地"])}</td></tr>` +
+            `<tr><th>電話</th><td>${esc(row["電話1"])}</td></tr>` +
+            `<tr><th>収容可能人員</th><td>${esc(row["収容可能人員（屋内）"])}人</td></tr>` +
+            `<tr><th>救護所</th><td>${esc(row["救護所"])}</td></tr>` +
+            `<tr><th>開放区</th><td>${esc(row["開放区"])}</td></tr>` +
+            `</table>`;
+
+          markers.push({marker: L.marker([lat, lon], {icon: defaultIcon}).bindPopup(popup).addTo(map), data: row});
+        });
+
+        console.log("読み込み件数:", results.data.length, "／表示したマーカー:", markers.length);
+
+// クリックイベント
+let clickMarker = null;
+map.on('click', function(e) {
+  const clickLat = e.latlng.lat;
+  const clickLon = e.latlng.lng;
+  // クリック位置のピンを更新
+  if (clickMarker) {
+    clickMarker.setLatLng([clickLat, clickLon]);
+  } else {
+    clickMarker = L.marker([clickLat, clickLon], {icon: clickIcon}).addTo(map).bindPopup('クリック位置').openPopup();
+  }
+  findNearestShelters(clickLat, clickLon, results.data);
+});
+
+  // 距離計算（ハーベシーン公式）
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 6371; // 地球の半径（km）
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) *
+            Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c; // 距離（km）
+}
+
+// 最寄りの避難所を検索
+function findNearestShelters(lat, lon, shelters) {
+
+
+// ルート描画
+  drawRoutes(nearest, lat, lon);
+}
+
+// ルートを描画
+function drawRoutes(shelters, clickLat, clickLon) {
+  // クリック位置のマーカー
+  // 既存のクリックマーカーを再利用
+  shelters.forEach(shelter => {
+    L.marker([shelter.lat, shelter.lon]).addTo(map)
+      .bindPopup(`<b>${shelter.name}</b><br>距離: ${shelter.distance.toFixed(2)} km`);
+    L.polyline([[clickLat, clickLon],[shelter.lat,shelter.lon]], {color:'blue'}).addTo(map);
+  });
+}
+
+        // 全マーカーが入る範囲に地図を合わせる
+        if (markers.length > 0) {
+          map.fitBounds(L.featureGroup(markers).getBounds().pad(0.05));
+        }
+      })
+      .catch(err => console.error("CSV読み込み失敗:", err));
+  </script>
+</body>
+</html>
