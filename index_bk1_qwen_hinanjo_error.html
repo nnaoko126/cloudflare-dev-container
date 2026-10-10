@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>浜松市避難所マップ</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <style> #map { height: 100vh; } </style>
+</head>
+<body>
+  <div id="map"></div>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/papaparse/papaparse.min.js"></script>
+  <script>
+    // CSV読み込み
+    Papa.parse("ori-data/221309_hamamatsu_hinanjyo.csv", {
+      header: true,
+      dynamicTyping: true,
+      encoding: "Shift-JIS",
+      complete: function(results) {
+        const data = results.data;
+        const map = L.map("map").setView([34.7966, 137.9361], 12); // 浜松市中心
+        L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png", { attribution: '© 国土地理院' }).addTo(map);
+
+        // 避難所マーカー追加
+        data.forEach(row => {
+          const lat = row.緯度 || 0;
+          const lon = row.経度 || 0;
+          L.marker([lat, lon]).addTo(map)
+            .bindPopup(`<b>${row.名称}</b><br>${row.住所}`);
+        });
+      }
+    });
+  </script>
+</body>
+</html>
